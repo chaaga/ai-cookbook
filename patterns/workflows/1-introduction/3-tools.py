@@ -1,10 +1,12 @@
 import json
 import os
 
+from dotenv import load_dotenv
 import requests
 from openai import OpenAI
 from pydantic import BaseModel, Field
 
+load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 """
@@ -34,7 +36,7 @@ tools = [
         "type": "function",
         "function": {
             "name": "get_weather",
-            "description": "Get current temperature for provided coordinates in celsius.",
+            "description": "Get current temperature for provided coordinates in Fahrenheit.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -53,7 +55,7 @@ system_prompt = "You are a helpful weather assistant."
 
 messages = [
     {"role": "system", "content": system_prompt},
-    {"role": "user", "content": "What's the weather like in Paris today?"},
+    {"role": "user", "content": "What will be the weather like in Boston today? Please tell the temperature in Fahrenheit and Celsius both"},
 ]
 
 completion = client.chat.completions.create(
@@ -75,18 +77,25 @@ completion.model_dump()
 
 def call_function(name, args):
     if name == "get_weather":
+        print(f"Calling get_weather with args: {args}")
         return get_weather(**args)
 
 
-for tool_call in completion.choices[0].message.tool_calls:
-    name = tool_call.function.name
-    args = json.loads(tool_call.function.arguments)
-    messages.append(completion.choices[0].message)
+tool_calls = completion.choices[0].message.tool_calls
 
-    result = call_function(name, args)
-    messages.append(
-        {"role": "tool", "tool_call_id": tool_call.id, "content": json.dumps(result)}
-    )
+if tool_calls is None:
+    print("Model did not call any tools.")
+else:
+    for tool_call in tool_calls:
+        name = tool_call.function.name
+        print(f"Model called tool: {name}")
+        args = json.loads(tool_call.function.arguments)
+        messages.append(completion.choices[0].message)
+
+        result = call_function(name, args)
+        messages.append(
+            {"role": "tool", "tool_call_id": tool_call.id, "content": json.dumps(result)}
+        )
 
 # --------------------------------------------------------------
 # Step 4: Supply result and call model again
@@ -94,8 +103,11 @@ for tool_call in completion.choices[0].message.tool_calls:
 
 
 class WeatherResponse(BaseModel):
-    temperature: float = Field(
-        description="The current temperature in celsius for the given location."
+    temperatureF: float = Field(
+        description="The weather in Fahrenheit for the given location for today."
+    )
+    temperatureC: float = Field(
+        description="The weather in Celsius for the given location for today."
     )
     response: str = Field(
         description="A natural language response to the user's question."
@@ -109,10 +121,8 @@ completion_2 = client.beta.chat.completions.parse(
     response_format=WeatherResponse,
 )
 
-# --------------------------------------------------------------
-# Step 5: Check model response
-# --------------------------------------------------------------
+completion_2.model_dump()
 
 final_response = completion_2.choices[0].message.parsed
-final_response.temperature
+#final_response.temperature
 final_response.response

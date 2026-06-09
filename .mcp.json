@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "knowledge_base": {
+      "type": "http",
+      "url": "http://localhost:8050/mcp"
+    },
+    "weather": {
+      "type": "http",
+      "url": "http://localhost:8051/mcp"
+    }
+  }
+}

@@ -2,11 +2,14 @@ import asyncio
 import logging
 import os
 
+from dotenv import load_dotenv
 import nest_asyncio
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
 nest_asyncio.apply()
+load_dotenv()
+api_key=os.getenv("OPENAI_API_KEY")
 
 # Set up logging configuration
 logging.basicConfig(
