@@ -92,6 +92,63 @@ Type any query at the prompt. Examples:
 - `What's the weather at our HQ?` → multi-hop: `get_office_location` then `get_weather`
 - `Tell me about the anthropics/anthropic-sdk-python repo` → routes to DeepWiki
 
+## Design Decisions
+
+### MCP Tool vs Agent — when to use which
+
+An **MCP tool** is stateless: input in, output out. The model decides when to call it, how many times, and in what order. An **agent** owns a loop — it decides which tools to call and sequences them to reach a goal.
+
+Rule of thumb:
+- **Capability** (do X to Y) → MCP tool
+- **Workflow** (decide how to apply X, Y, Z to achieve a goal) → agent
+
+**Real example:** a company has REST APIs like `make_sentence_compliant` and `get_customer`. These should be wrapped as MCP tools, not agents. Clients building agentic systems connect to your MCP server and the model decides when to call each tool. If you wrapped them in an agent, you'd be forcing your orchestration logic on every client.
+
+REST APIs are designed for developers writing code. MCP tools are designed for models doing reasoning. If your clients are building agentic systems, expose MCP tools.
+
+### Agent vs Subagent
+
+There is no technical distinction — it's about role in a given system. The same code can be both.
+
+- **Agent** = runs autonomously, has a loop, decides which tools to call
+- **Subagent** = an agent being orchestrated by another agent
+
+`MCPOpenAIClient` in this repo is an agent when run standalone. Wrap it in `agent_server.py` and have an orchestrator call it, and that same instance becomes a subagent. The label describes the relationship, not the code.
+
+### Tools vs MCP Tools
+
+A **tool** (in the LLM sense) is a function the model can call — you define it as a JSON schema, the model decides when to invoke it, you execute it and return the result. This is what `patterns/workflows/3-tools.py` does with the raw OpenAI SDK.
+
+An **MCP tool** is the same concept but served over a standardized protocol (MCP). The difference is operational:
+
+| | Plain tool | MCP tool |
+|---|---|---|
+| Definition | JSON schema hardcoded in your client | Defined once in the server, auto-discovered by any client |
+| Execution | Your client runs the function | The MCP server runs the function |
+| Reuse | Copy-paste into every project | Any MCP-compatible client connects and uses it |
+| Hosting | In-process with the client | Separate process, can be remote |
+
+Plain tools are fine for one-off scripts. MCP tools are the right choice when you want capabilities reused across projects, teams, or clients.
+
+### Benefits of MCP Tools
+
+1. **Discoverability** — the model discovers available tools at runtime by calling `list_tools()`. No human needs to read docs and hardcode schemas. The tool description *is* the documentation for the model.
+
+2. **Reusability** — define the tool once in the server, use it from any MCP-compatible client (Claude Code, your Python client, PydanticAI, LangChain). No copy-pasting JSON schemas across projects.
+
+3. **Separation of concerns** — the server owns the implementation; the client owns the orchestration. You can update the tool's logic without touching any client code.
+
+4. **Model-friendly output** — you shape the return value for LLM consumption (concise text, no irrelevant fields) rather than for a frontend or another service.
+
+5. **Composability** — clients can connect to multiple MCP servers and the model sees all tools in a flat list. Mix your own servers with external ones (like DeepWiki) with no extra glue code.
+
+### MCP vs A2A (Agent-to-Agent protocol)
+
+- **MCP** = how an agent connects to tools and data (stateless capabilities)
+- **A2A** = how agents coordinate with each other (stateful, long-running tasks)
+
+Companies publish MCP servers today because tools are stateless and composable — any client can use them. Agents are opinionated (your prompt, your model, your loop). A2A is the emerging protocol for sharing agents the same way MCP shares tools. As A2A matures, expect "agent marketplaces" the same way MCP server directories exist today.
+
 ## Transport Comparison
 
 | Transport | Used by | Notes |
