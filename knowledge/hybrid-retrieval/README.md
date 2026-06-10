@@ -1,6 +1,6 @@
 # Building Hybrid Retrieval From Scratch (BM25 + Dense + Reranker)
 
-The previous tutorial, [`knowledge/agentic-rag`](../agentic-rag/), made the case for ditching the vector database entirely and letting an agent grep the source files. That works well when your corpus is code, runbooks, or anything where exact symbols matter. **It does not work well when the queries paraphrase the documents.** "Auth logic" against a corpus that says "authentication middleware" is the canonical failure mode.
+The previous tutorial, [`knowledge/pydantic-agentic-rag`](../pydantic-agentic-rag/), made the case for ditching the vector database entirely and letting an agent grep the source files. That works well when your corpus is code, runbooks, or anything where exact symbols matter. **It does not work well when the queries paraphrase the documents.** "Auth logic" against a corpus that says "authentication middleware" is the canonical failure mode.
 
 This tutorial covers the production retrieval stack you reach for when you do want an index. The plain hybrid baseline that wins on public benchmarks in 2026: **BM25 for keyword matching, dense embeddings for paraphrase, Reciprocal Rank Fusion to combine them, and a cross-encoder reranker on the top-50 candidates.**
 
