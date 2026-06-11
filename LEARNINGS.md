@@ -106,6 +106,57 @@ Use MCP for capabilities. Use A2A for orchestrating agents across teams or vendo
 
 ---
 
+## RAG (Retrieval-Augmented Generation)
+
+### What RAG Is
+
+RAG grounds an LLM's answer in your own documents instead of relying on what the model memorized during training. Pipeline: **embed → vector search → (rerank) → generate**.
+
+```
+query ──► embed ──► vector DB (top-k by similarity) ──► [rerank] ──► LLM (context + query) ──► answer
+```
+
+The retrieval side ("R") finds relevant text; the generation side ("G") asks the LLM to answer using only that text. Implemented end-to-end in `agentic-rag/rfp-assistant-excel/`.
+
+### Two-Stage Retrieval: Bi-encoder + Cross-encoder
+
+| | Bi-encoder (retrieve) | Cross-encoder (rerank) |
+|---|---|---|
+| How it scores | Encodes query and document **separately**, compares vectors | Encodes query + document **together**, one forward pass |
+| Speed | Fast — documents pre-embedded at ingest time | Slow — must run per query/candidate pair |
+| Scale | Thousands of documents | Only the top-k candidates from stage 1 |
+| Quality | Mediocre on subtle wording differences | Much higher — model sees both texts at once |
+
+Stage 1 (bi-encoder + vector DB) provides **recall**: cheaply narrow thousands of documents to a handful of candidates. Stage 2 (cross-encoder) provides **precision**: re-score just those candidates accurately. Used together because the cross-encoder alone is too slow to run against a whole knowledge base.
+
+### Confidence Gating
+
+Don't always force-feed the LLM a context. Score the top reranked candidate(s) and only pass them as context if they clear a threshold; otherwise tell the user no good match was found rather than generating from a weak match. The threshold lives on the reranker's score scale (raw logits vs 0–1 sigmoid), so it must be re-tuned whenever the reranker model changes.
+
+### Challenges with RAG
+
+- **Retrieval quality is the bottleneck** — chunking, embedding model choice, and reranking determine whether the right context even reaches the LLM. Bad retrieval → bad answer, regardless of model quality.
+- **Context dilution** — too many chunks in the prompt buries the relevant one ("lost in the middle") and increases cost/latency.
+- **Staleness** — the vector index must be rebuilt as source documents change; it's a snapshot, not live data.
+- **Evaluation is hard** — retrieval quality (did we find the right chunks) and generation quality (did the model use them well) need separate metrics and a labeled golden set.
+- **No multi-step reasoning** — classic RAG is single-shot retrieve-then-generate; it can't decide "look up X, then based on that look up Y."
+- **"Answer only from context" is an instruction, not a guarantee** — the LLM can still drift or hallucinate.
+
+### RAG vs MCP — When to Use Which
+
+These solve different problems and are commonly combined, not competing choices:
+
+| | RAG | MCP / Tools |
+|---|---|---|
+| Best for | Unstructured knowledge (docs, past Q&A, policies) where semantic similarity is the only practical lookup | Structured or live data (databases, APIs, file systems) that can be queried precisely |
+| How it answers | "Find text similar in meaning to the query" | "Run this exact function and get the exact result" |
+| Freshness | Snapshot — index rebuilt periodically | Live — hits the source directly |
+| Context size | Depends on chunking/reranking quality | Naturally small — fetch only what's needed for the query |
+
+"Keep the context window small" is solved by **better retrieval** (smaller chunks, reranking, confidence gating), not by replacing RAG with tools — tools don't help when the knowledge is unstructured prose with no precise query. For an RFP assistant, the realistic pattern is both: MCP/tools for "look up this client's contract terms in the database," RAG for "find similar answers we've given to this kind of question before."
+
+---
+
 ## Agent Patterns
 
 ### Agent vs Subagent
@@ -208,7 +259,7 @@ Based on the AI Engineer 2026 roadmap:
 - [x] Agent loop pattern
 - [x] Multi-server MCP client
 - [x] External MCP servers
-- [ ] **RAG** — ingestion pipeline, embeddings, vector DB, hybrid search, re-ranking
+- [x] **RAG** — ingestion pipeline, embeddings, vector DB, hybrid search, re-ranking
 - [ ] Observability — Langfuse tracing, LLM-as-a-judge evals, cost tracking
 - [ ] Deployment — Docker, cloud, CI/CD
 - [ ] Multi-agent with A2A protocol (emerging)
