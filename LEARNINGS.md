@@ -6,6 +6,26 @@ Personal knowledge base — concepts, decisions, and insights accumulated while 
 
 ## MCP (Model Context Protocol)
 
+### What MCP Is
+
+**MCP** is an open protocol (introduced by Anthropic, late 2024) that standardizes how LLM applications connect to external tools and data. Think of it as **USB-C for AI**: instead of every app writing custom glue code for every API, the API is wrapped once in an **MCP server**, and any **MCP client** (Claude Code, Claude Desktop, a Python script, PydanticAI) can plug in and use it.
+
+The architecture is client–server:
+
+```
+LLM app (host)
+    └── MCP client  ──(protocol: stdio or HTTP/SSE)──►  MCP server
+                                                          ├── tools      (functions the model can call)
+                                                          ├── resources  (data the model can read)
+                                                          └── prompts    (reusable prompt templates)
+```
+
+- The **server** exposes capabilities — most commonly *tools*, but also *resources* and *prompts*.
+- The **client** connects, asks the server what it offers (`list_tools()`), and relays those to the model. The model never talks to the server directly; the client brokers every call.
+- The protocol itself is JSON-RPC over stdio (local servers) or HTTP/SSE (remote servers).
+
+The key insight: MCP doesn't add new model capabilities — tool calling already existed. It standardizes the *plumbing*, so integrations are written once and work everywhere.
+
 ### Plain Tool vs MCP Tool
 
 A **tool** (in the LLM sense) is a function the model can call — defined as a JSON schema, the model decides when to invoke it, you execute it and return the result. This is the raw pattern used in `patterns/workflows/3-tools.py`.
@@ -47,6 +67,30 @@ A company with APIs like `make_sentence_compliant` and `get_customer` should wra
 compliance_server  →  make_sentence_compliant, check_policy, flag_content
 data_server        →  get_customer, get_contract, search_documents
 ```
+
+### When to Use MCP
+
+The deciding question is not "internal vs external" — it's **"is the caller an LLM or a programmer?"**
+
+**Frontend → MCP tools? No.** MCP solves a problem frontends don't have: runtime discovery by a model. A frontend developer knows the endpoints at build time, so discovery buys nothing — and costs a lot:
+
+- **Wrong output shape** — good MCP tools return concise, LLM-friendly text; a UI needs structured JSON with IDs, timestamps, pagination cursors, every field.
+- **Lost HTTP semantics** — REST gives per-route caching, CDN, status codes, rate limiting, browser-native auth. MCP is JSON-RPC over a session; none of that applies cleanly.
+- **Indirection tax** — tunneling typed API calls through a protocol designed for an intermediary (the model) that isn't there.
+
+**Internal agents → MCP tools? Yes.** If internal agents or LLM apps (including Claude Code/Desktop used by the team) need a capability, MCP earns its keep even with zero external consumers: define once, every agent discovers it; the owning team controls the tool description and output shaping; updates propagate at the next `list_tools()`.
+
+Exception: one LLM app calling one function → skip MCP, use an in-process plain tool (`3-tools.py` pattern).
+
+**The pattern: don't choose.** Keep the service layer as the single source of truth and expose two thin doors into it:
+
+```
+frontend / mobile / partner devs ──► REST / GraphQL ──┐
+                                                      ├──► service layer
+internal & external agents ────────► MCP server ──────┘    (single source of truth)
+```
+
+The MCP server is a thin wrapper over the same functions the REST handlers call — it adds model-oriented descriptions and reshapes output for LLM consumption. Each consumer type gets an interface designed for it; business logic lives in one place.
 
 ### MCP vs A2A
 
